@@ -31,21 +31,22 @@ class CurrencyExchangeFlow(private val stateRef: StateRef) : FlowLogic<SignedTra
 
         val input = serviceHub.toStateAndRef<TradeState>(stateRef)
         val stateData = input.state.data
-        val currencyPair = "$stateData.sellCurrency/$stateData.buyCurrency"
+        val currencyPair = stateData.sellCurrency +"/"+ stateData.buyCurrency
 
+        val sellAmount = stateData.sellAmount;
 
-        println("Querying for Currency Rates")
+        println("Querying for Currency Pair - $currencyPair")
         //query oracle for currency rate
         val currencyRates = subFlow(QueryRates(oracle, currencyPair))
-        val convertedCurrency = "%.2f".format(stateData.sellAmount * currencyRates)
+        val convertedCurrency = "%.2f".format( sellAmount* currencyRates)
 
         println("$currencyPair Rate is : $currencyRates")
-        println("Given $stateData.sellCurrency-$stateData.sellAmount - Receiving $stateData.buyCurrency-$convertedCurrency")
+        println("Given Currency Pair $currencyPair -  Currency Rates - $currencyRates - ConvertCurrency/Receiving Amount $convertedCurrency")
 
 
         val output = TradeState(
             stateData.sellAmount,
-            1500.0,
+            convertedCurrency.toDouble(),
             stateData.sellCurrency,
             stateData.buyCurrency,
             "Completed",
