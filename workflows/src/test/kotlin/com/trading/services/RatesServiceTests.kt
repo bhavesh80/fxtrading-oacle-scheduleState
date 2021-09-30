@@ -21,7 +21,7 @@ class RatesServiceTests {
 
     @Test
     fun `oracle returns correct Nth prime`() {
-        assertEquals(73.79, oracle.query("USD/INR"))
+        assertEquals(73.81, oracle.query("USD/INR"))
     }
 
     @Test

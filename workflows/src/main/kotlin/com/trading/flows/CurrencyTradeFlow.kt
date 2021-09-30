@@ -1,23 +1,26 @@
 package com.trading.flows
 
 import co.paralleluniverse.fibers.Suspendable
+import com.sun.istack.NotNull
 import com.trading.contracts.TradeContract
 import com.trading.states.TradeState
 import net.corda.core.contracts.Command
 import net.corda.core.contracts.StateRef
 import net.corda.core.flows.*
 import net.corda.core.identity.CordaX500Name
+import net.corda.core.identity.Party
 import net.corda.core.transactions.SignedTransaction
 import net.corda.core.transactions.TransactionBuilder
 import java.util.function.Predicate
 
-
 @InitiatingFlow
 @SchedulableFlow
-class CurrencyExchangeFlow(private val stateRef: StateRef) : FlowLogic<SignedTransaction>() {
+class CurrencyTradeFlow(private val stateRef: StateRef) : FlowLogic<SignedTransaction>() {
 
     @Suspendable
     override fun call(): SignedTransaction {
+
+        println("Trade timeout - Setting status : Cancelled")
 
 
         println("Obtaining notary reference")
@@ -43,21 +46,23 @@ class CurrencyExchangeFlow(private val stateRef: StateRef) : FlowLogic<SignedTra
         println("$currencyPair Rate is : $currencyRates")
         println("Given Currency Pair $currencyPair -  Currency Rates - $currencyRates - ConvertCurrency/Receiving Amount $convertedCurrency")
 
+        val responder: Party? = stateData.responder
 
         val output = TradeState(
             stateData.sellAmount,
-            convertedCurrency.toDouble(),
+            stateData.receivedAmount,
             stateData.sellCurrency,
             stateData.buyCurrency,
-            "Completed",
-            ourIdentity,
+            "Cancelled",
+            stateData.requester,
             stateData.responder,
-            currencyRates
+            stateData.currencyRate
         )
-        println("Setting state as Completed")
+        println("Setting state as Cancelled")
 
-        println("Collecting keys - oracle , own")
-        val cmdRequiredSigners = listOf(oracle.owningKey, ourIdentity.owningKey)
+        println("Collecting keys - oracle , own, responder ")
+
+        val cmdRequiredSigners = listOf(oracle.owningKey, ourIdentity.owningKey , responder!!.owningKey)
 
 
         val txCommand = Command(TradeContract.Commands.CreateTradeWithOracle(currencyPair, currencyRates), cmdRequiredSigners)
@@ -86,10 +91,31 @@ class CurrencyExchangeFlow(private val stateRef: StateRef) : FlowLogic<SignedTra
         println("Oracle verify data and collect signature")
         val oracleSignature = subFlow(SignRates(oracle, ftx))
 
-        val stx = ptx.withAdditionalSignature(oracleSignature)
+        val selfAndOracleSignedTransaction = ptx.withAdditionalSignature(oracleSignature)
+
+//        send transaction to other party and receive it back with their signature
+        val otherPartySession = initiateFlow(responder)
+        val signedTransaction = subFlow(CollectSignaturesFlow(selfAndOracleSignedTransaction, setOf(otherPartySession),  listOf(ourIdentity.owningKey)))
 
         println("Transaction complete")
-        return subFlow(FinalityFlow(stx, listOf()))
+        return subFlow(FinalityFlow(signedTransaction, (otherPartySession)))
 
+    }
+}
+
+@InitiatedBy(CurrencyTradeFlow::class)
+class CurrencyTradeFlowResponder(private val counterpartySession: FlowSession) : FlowLogic<SignedTransaction?>() {
+    @Suspendable
+    @Throws(FlowException::class)
+    override fun call(): SignedTransaction? {
+        subFlow(object : SignTransactionFlow(counterpartySession) {
+            @Throws(FlowException::class)
+            override fun checkTransaction(@NotNull stx: SignedTransaction) {
+                val state = stx.tx.outputs.iterator().next().data as TradeState
+                println("accept transaction with linear ${state.linearId}")
+
+            }
+        })
+        return subFlow(ReceiveFinalityFlow(counterpartySession))
     }
 }

@@ -30,12 +30,14 @@ class ExchangeRatesOracle(val services: ServiceHub) : SingletonSerializeAsToken(
         ftx.verify()
 
         fun isCommandWithCorrectCurrencyRateAndIAmSigner(elem: Any) = when {
-            elem is Command<*> && elem.value is TradeContract.Commands.CreateTrade -> {
-                val cmdData = elem.value as TradeContract.Commands.CreateTrade
+            elem is Command<*> && elem.value is TradeContract.Commands.CreateTradeWithOracle -> {
+                val cmdData = elem.value as TradeContract.Commands.CreateTradeWithOracle
                 myKey in elem.signers && query(cmdData.currencyPair) == cmdData.currencyRate
             }
             else -> false
         }
+
+
         val isValidMerkleTree = ftx.checkWithFun(::isCommandWithCorrectCurrencyRateAndIAmSigner)
 
         if (isValidMerkleTree) {
